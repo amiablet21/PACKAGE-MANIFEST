@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Screen: hide print view ── */
+#print-view {
+  display: none;
+}
+
+/* ── Print ── */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.45in 0.5in;
+  }
+
+  /* Hide everything, then reveal only the print view */
+  body * {
+    visibility: hidden !important;
+  }
+
+  #print-view,
+  #print-view * {
+    visibility: visible !important;
+  }
+
+  #print-view {
+    display: block !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  /* Force table header & zebra row colors to print */
+  #print-view table thead tr th {
+    background-color: #e0e0e0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #print-view table tbody tr:nth-child(even) td {
+    background-color: #f5f5f5 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
