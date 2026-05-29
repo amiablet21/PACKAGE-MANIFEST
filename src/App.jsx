@@ -46,10 +46,29 @@ const makeRow = (tracking = '', description = '', scanned = false) => ({
   scanned,
 })
 
+// FedEx Ground "96" barcodes scan as a long numeric string (e.g. 34 digits)
+// whose trailing 12 digits are the human-readable tracking number. We only
+// receive Ground, so strip the leading routing prefix down to those 12 digits.
+const normalizeTracking = (raw) => {
+  const v = String(raw).trim()
+  if (/^\d+$/.test(v) && v.startsWith('96') && v.length > 15) {
+    return v.slice(-12)
+  }
+  return v
+}
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState('manifest')
   const [rows, setRows] = useState([])
   const [scanInput, setScanInput] = useState('')
   const [sessionCount, setSessionCount] = useState(0)
+
+  // Returns tab state
+  const [returnRows, setReturnRows] = useState([])
+  const [returnScanInput, setReturnScanInput] = useState('')
+  const [returnSessionCount, setReturnSessionCount] = useState(0)
+  const [returnDuplicateIds, setReturnDuplicateIds] = useState(new Set())
+  const returnScanRef = useRef(null)
   const [toasts, setToasts] = useState([])
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings] = useState(() => {
@@ -143,7 +162,7 @@ export default function App() {
     setRows(prev => {
       let updated = [...prev]
       nums.forEach(val => {
-        const newRow = makeRow(val, '', true)
+        const newRow = makeRow(normalizeTracking(val), '', true)
         updated.push(newRow)
         added++
       })
@@ -204,6 +223,75 @@ export default function App() {
     setDuplicateIds(new Set())
     setScanInput('')
     setTimeout(() => scanRef.current?.focus(), 0)
+  }, [])
+
+  const addReturnNumbers = useCallback((values) => {
+    const nums = values.map(v => v.trim()).filter(Boolean)
+    if (!nums.length) return 0
+    let added = 0
+    let dupCount = 0
+    setReturnRows(prev => {
+      const updated = [...prev]
+      nums.forEach(val => {
+        updated.push(makeRow(normalizeTracking(val), '', true))
+        added++
+      })
+      const dups = computeDuplicates(updated)
+      dupCount = dups.size
+      setReturnDuplicateIds(dups)
+      return updated
+    })
+    setReturnSessionCount(c => c + added)
+    beepRef.current?.()
+    if (dupCount > 0) addToast(`${dupCount} duplicate(s) highlighted in red`, 'warning')
+    return added
+  }, [computeDuplicates, addToast])
+
+  const handleReturnScan = useCallback((e) => {
+    if (e.key !== 'Enter') return
+    const val = returnScanInput.trim()
+    if (!val) return
+    setReturnScanInput('')
+    addReturnNumbers([val])
+    setTimeout(() => returnScanRef.current?.focus(), 0)
+  }, [returnScanInput, addReturnNumbers])
+
+  const handleReturnPaste = useCallback((e) => {
+    const text = e.clipboardData.getData('text')
+    const values = text.split(/[\t\n\r]+/).map(v => v.trim()).filter(Boolean)
+    if (values.length <= 1) return
+    e.preventDefault()
+    setReturnScanInput('')
+    addReturnNumbers(values)
+    setTimeout(() => returnScanRef.current?.focus(), 0)
+  }, [addReturnNumbers])
+
+  const updateReturnRow = useCallback((id, field, value) => {
+    setReturnRows(prev => {
+      const updated = prev.map(r => r.id === id ? { ...r, [field]: value } : r)
+      setReturnDuplicateIds(computeDuplicates(updated))
+      return updated
+    })
+  }, [computeDuplicates])
+
+  const deleteReturnRow = useCallback((id) => {
+    setReturnRows(prev => {
+      const updated = prev.filter(r => r.id !== id)
+      setReturnDuplicateIds(computeDuplicates(updated))
+      return updated
+    })
+  }, [computeDuplicates])
+
+  const addBlankReturnRow = useCallback(() => {
+    setReturnRows(prev => [...prev, makeRow()])
+  }, [])
+
+  const clearReturns = useCallback(() => {
+    setReturnRows([])
+    setReturnSessionCount(0)
+    setReturnDuplicateIds(new Set())
+    setReturnScanInput('')
+    setTimeout(() => returnScanRef.current?.focus(), 0)
   }, [])
 
   const handleFileData = useCallback((headers, data) => {
@@ -380,6 +468,31 @@ export default function App() {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-gray-200 mb-4 no-print">
+          <button
+            onClick={() => setActiveTab('manifest')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
+              activeTab === 'manifest'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Manifest
+          </button>
+          <button
+            onClick={() => setActiveTab('returns')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
+              activeTab === 'returns'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Returns
+          </button>
+        </div>
+
+        {activeTab === 'manifest' && (<>
         {/* Manifest Header */}
         <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4 shadow-sm">
           <div className="text-center mb-4">
@@ -493,6 +606,63 @@ export default function App() {
             </button>
           </div>
         </div>
+        </>)}
+
+        {activeTab === 'returns' && (<>
+          {/* Returns Header */}
+          <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4 shadow-sm">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-800 print-title">Returns</h2>
+              <p className="text-sm text-gray-400 mt-1">Scan returned packages</p>
+            </div>
+          </div>
+
+          {/* Returns scan input */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm no-print">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Scan Return Tracking Number
+                </label>
+                <input
+                  ref={returnScanRef}
+                  type="text"
+                  value={returnScanInput}
+                  onChange={e => setReturnScanInput(e.target.value)}
+                  onKeyDown={handleReturnScan}
+                  onPaste={handleReturnPaste}
+                  placeholder="Scan or type a return tracking number, press Enter — or paste from Excel..."
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="text-center min-w-[110px]">
+                <div className="bg-blue-600 text-white rounded-full px-3 py-1 text-sm font-bold">
+                  {returnSessionCount} scanned
+                </div>
+                <div className="text-xs text-gray-400 mt-1">this session</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Returns Table */}
+          <ManifestTable
+            rows={returnRows}
+            duplicateIds={returnDuplicateIds}
+            onUpdate={updateReturnRow}
+            onDelete={deleteReturnRow}
+            onAddRow={addBlankReturnRow}
+          />
+
+          {/* Returns Footer */}
+          <div className="mt-6 flex justify-end items-center border-t border-gray-200 pt-4 no-print">
+            <button
+              onClick={clearReturns}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition text-sm font-medium"
+            >
+              Clear Returns
+            </button>
+          </div>
+        </>)}
       </div>
     </div>
   )
