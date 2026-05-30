@@ -230,10 +230,13 @@ export default function App() {
     if (!nums.length) return 0
     let added = 0
     let dupCount = 0
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     setReturnRows(prev => {
       const updated = [...prev]
       nums.forEach(val => {
-        updated.push(makeRow(normalizeTracking(val), '', true))
+        const newRow = makeRow(normalizeTracking(val), '', true)
+        newRow.scannedAt = ts
+        updated.push(newRow)
         added++
       })
       const dups = computeDuplicates(updated)
@@ -311,10 +314,10 @@ export default function App() {
     }
 
     const tableRows = returnRows.map((r, i) =>
-      `<tr><td>${i + 1}</td><td>${escapeHtml(r.tracking)}</td><td>${escapeHtml(r.description) || '—'}</td></tr>`
+      `<tr><td>${i + 1}</td><td>${escapeHtml(r.tracking)}</td><td>${escapeHtml(r.scannedAt) || '—'}</td></tr>`
     ).join('')
 
-    const tracking_table_html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th>#</th><th>Tracking Number</th><th>Description</th></tr></thead><tbody>${tableRows}</tbody></table>`
+    const tracking_table_html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th>#</th><th>Tracking Number</th><th>Time Received</th></tr></thead><tbody>${tableRows}</tbody></table>`
 
     const payload = {
       app_token: APP_TOKEN,
@@ -326,7 +329,7 @@ export default function App() {
       to_email: toEmail,
       cc_emails: ccEmails,
       total_packages: returnRows.length,
-      tracking_numbers: returnRows.map(r => ({ tracking: r.tracking, description: r.description })),
+      tracking_numbers: returnRows.map(r => ({ tracking: r.tracking, time_received: r.scannedAt || '' })),
       tracking_table_html
     }
 
