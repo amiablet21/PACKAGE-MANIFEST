@@ -294,6 +294,59 @@ export default function App() {
     setTimeout(() => returnScanRef.current?.focus(), 0)
   }, [])
 
+  const handleSendReturns = useCallback(async () => {
+    if (returnRows.length === 0) {
+      addToast('Scan at least one return before sending', 'warning')
+      return
+    }
+
+    const toEmail = (settings.toEmail || '').trim()
+    const ccEmails = Array.isArray(settings.ccEmails)
+      ? settings.ccEmails.map(e => String(e).trim()).filter(Boolean)
+      : []
+
+    if (!toEmail) {
+      addToast('No recipient email set — open Settings to add one.', 'warning')
+      return
+    }
+
+    const tableRows = returnRows.map((r, i) =>
+      `<tr><td>${i + 1}</td><td>${escapeHtml(r.tracking)}</td><td>${escapeHtml(r.description) || '—'}</td></tr>`
+    ).join('')
+
+    const tracking_table_html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th>#</th><th>Tracking Number</th><th>Description</th></tr></thead><tbody>${tableRows}</tbody></table>`
+
+    const payload = {
+      app_token: APP_TOKEN,
+      doc_type: 'return',
+      date,
+      time,
+      carrier,
+      business_name: businessName,
+      to_email: toEmail,
+      cc_emails: ccEmails,
+      total_packages: returnRows.length,
+      tracking_numbers: returnRows.map(r => ({ tracking: r.tracking, description: r.description })),
+      tracking_table_html
+    }
+
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Manifest-Token': APP_TOKEN
+        },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const ccNote = ccEmails.length ? ` (+${ccEmails.length} CC)` : ''
+      addToast(`Returns emailed to ${toEmail}${ccNote}`, 'success')
+    } catch (err) {
+      addToast(`Email failed: ${err.message}`, 'warning')
+    }
+  }, [settings, date, time, carrier, businessName, returnRows, addToast])
+
   const handleFileData = useCallback((headers, data) => {
     setPendingFileData({ headers, data })
     setShowMapper(true)
@@ -337,6 +390,7 @@ export default function App() {
 
     const payload = {
       app_token: APP_TOKEN,
+      doc_type: 'manifest',
       date,
       time,
       carrier,
@@ -654,12 +708,20 @@ export default function App() {
           />
 
           {/* Returns Footer */}
-          <div className="mt-6 flex justify-end items-center border-t border-gray-200 pt-4 no-print">
+          <div className="mt-6 flex justify-end items-center gap-3 border-t border-gray-200 pt-4 no-print">
             <button
               onClick={clearReturns}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition text-sm font-medium"
             >
               Clear Returns
+            </button>
+            <button
+              onClick={handleSendReturns}
+              disabled={returnRows.length === 0}
+              title={returnRows.length === 0 ? 'Scan at least one return first' : 'Email the returns list'}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300"
+            >
+              Email Returns
             </button>
           </div>
         </>)}
