@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import * as XLSX from 'xlsx'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
 import ManifestTable from './components/ManifestTable'
-import FileUploader from './components/FileUploader'
-import ColumnMapper from './components/ColumnMapper'
 import SignatureSection from './components/SignatureSection'
 import NotesSection from './components/NotesSection'
 import PrintView from './components/PrintView'
@@ -86,8 +83,6 @@ export default function App() {
   })
   const [date, setDate] = useState(today())
   const [time, setTime] = useState(nowTime())
-  const [pendingFileData, setPendingFileData] = useState(null)
-  const [showMapper, setShowMapper] = useState(false)
   const [duplicateIds, setDuplicateIds] = useState(new Set())
   const scanRef = useRef(null)
   const beepRef = useRef(null)
@@ -352,30 +347,6 @@ export default function App() {
     }
   }, [settings, date, time, carrier, businessName, returnRows, addToast])
 
-  const handleFileData = useCallback((headers, data) => {
-    setPendingFileData({ headers, data })
-    setShowMapper(true)
-  }, [])
-
-  const handleMapConfirm = useCallback((trackingCol, descCol) => {
-    if (!pendingFileData) return
-    const newRows = pendingFileData.data
-      .map(row => makeRow(
-        String(row[trackingCol] || '').trim(),
-        descCol ? String(row[descCol] || '').trim() : ''
-      ))
-      .filter(r => r.tracking)
-
-    setRows(prev => {
-      const updated = [...prev, ...newRows]
-      setDuplicateIds(computeDuplicates(updated))
-      return updated
-    })
-    setPendingFileData(null)
-    setShowMapper(false)
-    addToast(`Imported ${newRows.length} rows`, 'success')
-  }, [pendingFileData, computeDuplicates, addToast])
-
   const handlePrint = useCallback(async () => {
     if (rows.length === 0) {
       addToast('Add at least one tracking number before printing', 'warning')
@@ -462,15 +433,6 @@ export default function App() {
           settings={settings}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
-        />
-      )}
-
-      {/* Column mapper */}
-      {showMapper && pendingFileData && (
-        <ColumnMapper
-          headers={pendingFileData.headers}
-          onConfirm={handleMapConfirm}
-          onCancel={() => { setShowMapper(false); setPendingFileData(null) }}
         />
       )}
 
@@ -623,11 +585,6 @@ export default function App() {
               <div className="text-xs text-gray-400 mt-1">this session</div>
             </div>
           </div>
-        </div>
-
-        {/* File uploader */}
-        <div className="mb-4 no-print">
-          <FileUploader onData={handleFileData} />
         </div>
 
         {/* Manifest Table */}
