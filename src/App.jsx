@@ -5,6 +5,7 @@ import ManifestTable from './components/ManifestTable'
 import SignatureSection from './components/SignatureSection'
 import NotesSection from './components/NotesSection'
 import PrintView from './components/PrintView'
+import InsuranceTab from './components/InsuranceTab'
 import { printManifest } from './utils/printManifest'
 
 // Central Make.com webhook — baked into the app so users never see it.
@@ -511,6 +512,16 @@ export default function App() {
           >
             Returns
           </button>
+          <button
+            onClick={() => setActiveTab('insurance')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
+              activeTab === 'insurance'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Insurance
+          </button>
         </div>
 
         {activeTab === 'manifest' && (<>
@@ -687,6 +698,10 @@ export default function App() {
             </button>
           </div>
         </>)}
+
+        {activeTab === 'insurance' && (
+          <InsuranceTab addToast={addToast} />
+        )}
       </div>
     </div>
   )

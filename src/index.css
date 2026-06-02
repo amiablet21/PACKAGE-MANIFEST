@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Always reserve the vertical scrollbar gutter so switching between tabs of
+   different heights doesn't shift the centered layout sideways. */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* ── Screen: hide print view ── */
 #print-view {
   display: none;
