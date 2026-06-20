@@ -1,7 +1,8 @@
 {
   "name": "manifest",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Manifest — desktop app for creating UPS and FedEx pickup manifests",
+  "author": "amiablet21 <imran@digitalworldshopus.com>",
   "main": "electron/main.js",
   "scripts": {
     "start": "concurrently \"npm run vite\" \"wait-on http://localhost:5173 && npx --no electron .\"",
@@ -31,6 +32,12 @@
       "electron/**/*",
       "node_modules/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../Label Printer/release/win-unpacked",
+        "to": "Labelwright"
+      }
     ],
     "directories": {
       "output": "release"

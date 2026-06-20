@@ -6,12 +6,15 @@ const { spawn } = require('child_process')
 
 // Locate the Labelwright ("Label Printer") executable. Checks, in order:
 //   1. LABELWRIGHT_PATH env var (explicit override)
-//   2. The per-user installed location (electron-builder NSIS default)
-//   3. The portable build inside a "Label Printer" folder in the user's home
+//   2. The copy bundled inside this installer (extraResources) — so a single
+//      Manifest install ships both apps and the button always works
+//   3. The per-user installed location (electron-builder NSIS default)
+//   4. The portable build inside a "Label Printer" folder in the user's home
 // Using os.homedir() keeps this working regardless of the Windows username.
 function findLabelPrinter() {
   const candidates = [
     process.env.LABELWRIGHT_PATH,
+    app.isPackaged ? path.join(process.resourcesPath, 'Labelwright', 'Labelwright.exe') : null,
     path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Labelwright', 'Labelwright.exe'),
     path.join(os.homedir(), 'Label Printer', 'release', 'win-unpacked', 'Labelwright.exe'),
   ].filter(Boolean)
