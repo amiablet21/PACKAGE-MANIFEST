@@ -409,6 +409,35 @@ export default function App() {
     addToast('Settings saved', 'success')
   }, [addToast])
 
+  // Launch the Labelwright ("Label Printer") desktop app via the Electron
+  // preload bridge. In a plain browser (no Electron) the bridge is absent, so
+  // we degrade gracefully with a warning instead of throwing.
+  const [launchingLabel, setLaunchingLabel] = useState(false)
+  const launchLabelPrinter = useCallback(async () => {
+    if (launchingLabel) return // ignore double-clicks while it's spinning up
+    if (!window.electronAPI?.launchLabelPrinter) {
+      addToast('Label Printer can only be launched from the desktop app.', 'warning')
+      return
+    }
+    setLaunchingLabel(true)
+    try {
+      const res = await window.electronAPI.launchLabelPrinter()
+      if (res?.ok) {
+        addToast('Launching Label Printer…', 'success')
+        // spawn() resolves the instant the process starts, but the Electron
+        // window takes a few seconds to cold-start and appear. Keep the spinner
+        // up for that window so the click feels responsive.
+        setTimeout(() => setLaunchingLabel(false), 3500)
+      } else {
+        addToast(res?.error || 'Could not launch Label Printer.', 'error')
+        setLaunchingLabel(false)
+      }
+    } catch (e) {
+      addToast('Could not launch Label Printer.', 'error')
+      setLaunchingLabel(false)
+    }
+  }, [addToast, launchingLabel])
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
 
@@ -476,6 +505,27 @@ export default function App() {
                 FedEx
               </button>
             </div>
+          {/* Launch the Label Printer (Labelwright) desktop app */}
+          <button
+            onClick={launchLabelPrinter}
+            disabled={launchingLabel}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold bg-neutral-900 text-white hover:bg-neutral-700 transition disabled:opacity-70 disabled:cursor-wait"
+            title="Open Label Printer"
+          >
+            {launchingLabel ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-90" fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+            )}
+            {launchingLabel ? 'Launching…' : 'Label Printer'}
+          </button>
           <button
             onClick={() => setShowSettings(true)}
             className="p-2 rounded-full hover:bg-gray-200 transition"
