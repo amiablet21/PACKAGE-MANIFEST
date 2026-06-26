@@ -7,4 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Launches the Labelwright ("Label Printer") desktop app. Resolves to
   // { ok: true, path } on success, or { ok: false, error } if it can't be found.
   launchLabelPrinter: () => ipcRenderer.invoke('launch-label-printer'),
+
+  // Opens an external URL (http/https) in the user's default browser.
+  // Resolves to { ok: true } or { ok: false, error }.
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 })

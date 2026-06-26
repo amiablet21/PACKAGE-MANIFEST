@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron')
+const { app, BrowserWindow, globalShortcut, ipcMain, shell } = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
@@ -39,6 +39,21 @@ ipcMain.handle('launch-label-printer', async () => {
     })
     child.unref()
     return { ok: true, path: exe }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) }
+  }
+})
+
+// IPC: open an external URL (e.g. the UPS batch upload page) in the user's
+// default browser — never inside the app window. Restricted to http/https.
+ipcMain.handle('open-external', async (_e, url) => {
+  try {
+    const u = new URL(String(url))
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return { ok: false, error: 'Only http/https links can be opened' }
+    }
+    await shell.openExternal(u.href)
+    return { ok: true }
   } catch (e) {
     return { ok: false, error: String(e && e.message ? e.message : e) }
   }

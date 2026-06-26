@@ -6,6 +6,7 @@ import SignatureSection from './components/SignatureSection'
 import NotesSection from './components/NotesSection'
 import PrintView from './components/PrintView'
 import InsuranceTab from './components/InsuranceTab'
+import UpsBatchTab from './components/UpsBatchTab'
 import { printManifest } from './utils/printManifest'
 
 // Central Make.com webhook — baked into the app so users never see it.
@@ -563,6 +564,16 @@ export default function App() {
             Returns
           </button>
           <button
+            onClick={() => setActiveTab('upsbatch')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
+              activeTab === 'upsbatch'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            UPS Batch
+          </button>
+          <button
             onClick={() => setActiveTab('insurance')}
             className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${
               activeTab === 'insurance'
@@ -751,6 +762,10 @@ export default function App() {
 
         {activeTab === 'insurance' && (
           <InsuranceTab addToast={addToast} />
+        )}
+
+        {activeTab === 'upsbatch' && (
+          <UpsBatchTab addToast={addToast} />
         )}
       </div>
     </div>
