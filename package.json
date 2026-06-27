@@ -1,6 +1,6 @@
 {
   "name": "manifest",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Manifest — desktop app for creating UPS and FedEx pickup manifests",
   "author": "amiablet21 <imran@digitalworldshopus.com>",
   "main": "electron/main.js",
