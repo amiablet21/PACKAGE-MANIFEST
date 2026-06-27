@@ -7,6 +7,7 @@ import NotesSection from './components/NotesSection'
 import PrintView from './components/PrintView'
 import InsuranceTab from './components/InsuranceTab'
 import UpsBatchTab from './components/UpsBatchTab'
+import SerialScan from './components/SerialScan'
 import { printManifest } from './utils/printManifest'
 
 // Central Make.com webhook — baked into the app so users never see it.
@@ -58,6 +59,7 @@ const normalizeTracking = (raw) => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('manifest')
+  const [showSerialScan, setShowSerialScan] = useState(false)
   const [rows, setRows] = useState([])
   const [scanInput, setScanInput] = useState('')
   const [sessionCount, setSessionCount] = useState(0)
@@ -467,6 +469,14 @@ export default function App() {
         />
       )}
 
+      {showSerialScan && (
+        <SerialScan
+          onClose={() => setShowSerialScan(false)}
+          addToast={addToast}
+          beep={() => beepRef.current?.()}
+        />
+      )}
+
       <div className="max-w-5xl mx-auto px-4 py-6">
 
         {/* Top bar */}
@@ -678,6 +688,13 @@ export default function App() {
         <div className="mt-6 flex justify-between items-center border-t border-gray-200 pt-4">
           <div className="text-sm text-gray-500 font-medium">Copy 1: Shipper — Copy 2: Driver</div>
           <div className="flex gap-3 no-print">
+            <button
+              onClick={() => setShowSerialScan(true)}
+              title="Open a plain serial-number scanner (no manifest branding)"
+              className="px-4 py-2 bg-white border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition text-sm font-semibold"
+            >
+              Serial Number Scan
+            </button>
             <button
               onClick={clearAll}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition text-sm font-medium"
