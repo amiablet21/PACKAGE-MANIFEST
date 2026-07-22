@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react'
-import { PDFDocument, rgb } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, PDFName } from 'pdf-lib'
 
 let did = 1
 
@@ -60,7 +60,7 @@ const editDistance = (a, b) => {
 // y-range, converted to pdf-lib's bottom-origin at draw time. The big bottom
 // "<SKU> N pc" text is left alone — that's the user's own custom-written note.
 const SKU_BANDS = [
-  { top: 456, bottom: 473 },   // Reference No.1 SKU line (snug to the text)
+  { top: 459, bottom: 471 },   // Reference No.1 SKU line (thin — snug to the text)
 ]
 // Fraction of the page width the black box spans (from the left edge).
 const REDACT_WIDTH_FRAC = 0.5
@@ -135,11 +135,21 @@ export default function DropshipTab({ addToast }) {
     const s = loadSettings()
     return s.hideSku !== undefined ? !!s.hideSku : true
   })
+  const [stampSku, setStampSku] = useState(() => {
+    const s = loadSettings()
+    return s.stampSku !== undefined ? !!s.stampSku : true
+  })
   const fileRef = useRef(null)
 
   const toggleHideSku = () => setHideSku(prev => {
     const next = !prev
     try { localStorage.setItem('dropship_settings', JSON.stringify({ ...loadSettings(), hideSku: next })) } catch { /* ignore */ }
+    return next
+  })
+
+  const toggleStampSku = () => setStampSku(prev => {
+    const next = !prev
+    try { localStorage.setItem('dropship_settings', JSON.stringify({ ...loadSettings(), stampSku: next })) } catch { /* ignore */ }
     return next
   })
 
@@ -206,18 +216,29 @@ export default function DropshipTab({ addToast }) {
     setBusy(true)
     try {
       const merged = await PDFDocument.create()
+      const font = stampSku ? await merged.embedFont(StandardFonts.HelveticaBold) : null
       for (const it of items) {
         const src = await PDFDocument.load(it.bytes)
         const pages = await merged.copyPages(src, src.getPageIndices())
         pages.forEach(p => {
-          if (hideSku) {
-            const { width, height } = p.getSize()
-            // Only redact standard Letter-height labels (skip odd sizes rather
-            // than risk covering the wrong spot).
-            if (height > 750 && height < 820) {
-              SKU_BANDS.forEach(b => {
-                p.drawRectangle({ x: 0, y: height - b.bottom, width: width * REDACT_WIDTH_FRAC, height: b.bottom - b.top, color: rgb(0, 0, 0) })
-              })
+          const { width, height } = p.getSize()
+          // Only touch standard Letter-height labels (skip odd sizes rather than
+          // risk covering / stamping the wrong spot).
+          const isLetter = height > 750 && height < 820
+          if (hideSku && isLetter) {
+            SKU_BANDS.forEach(b => {
+              p.drawRectangle({ x: 0, y: height - b.bottom, width: width * REDACT_WIDTH_FRAC, height: b.bottom - b.top, color: rgb(0, 0, 0) })
+            })
+          }
+          if (stampSku && isLetter) {
+            const skuTxt = (it.sku || '').trim()
+            const q = (String(it.qty || '').trim()) || '1'
+            if (skuTxt) {
+              // Remove the label's existing bottom SKU note (a FreeText
+              // annotation) and stamp the typed SKU + qty in its place.
+              const unit = parseInt(q, 10) === 1 ? 'unit' : 'units'
+              p.node.delete(PDFName.of('Annots'))
+              p.drawText(`${skuTxt}  -  ${q} ${unit}`, { x: 27, y: height - 605, size: 16, font, color: rgb(0, 0, 0) })
             }
           }
           merged.addPage(p)
@@ -513,6 +534,13 @@ export default function DropshipTab({ addToast }) {
         <input type="checkbox" checked={hideSku} onChange={toggleHideSku} className="w-4 h-4 accent-blue-600" />
         Cover the SKU with a black box on each label
         <span className="text-gray-400">(hides it from carriers — tuned for UPS Letter labels)</span>
+      </label>
+
+      {/* Stamp option */}
+      <label className="flex items-center gap-2 mb-2 text-sm text-gray-700 cursor-pointer select-none">
+        <input type="checkbox" checked={stampSku} onChange={toggleStampSku} className="w-4 h-4 accent-blue-600" />
+        Write the SKU + Qty on each label
+        <span className="text-gray-400">(stamps "SKU - qty" at the bottom, replacing the label's existing note)</span>
       </label>
 
       {/* Footer actions */}
