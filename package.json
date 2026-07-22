@@ -17,7 +17,12 @@
     "win": {
       "icon": "public/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -44,6 +49,7 @@
     }
   },
   "dependencies": {
+    "pdf-lib": "^1.17.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

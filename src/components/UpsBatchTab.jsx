@@ -109,10 +109,12 @@ export default function UpsBatchTab({ addToast }) {
     zip: saved.whZip || DEFAULT_WAREHOUSE.zip,
     country: saved.whCountry || DEFAULT_WAREHOUSE.country,
   })
-  const [fileName, setFileName] = useState('')
+  // Attached PO files ({ name, count }). Multiple files accumulate into poRows
+  // so a shipment can be assembled from several partial exports.
+  const [files, setFiles] = useState([])
   const [poRows, setPoRows] = useState([])
   // Per-order dimension overrides, keyed by row index. A field absent here
-  // falls back to the step-2 default. Reset whenever a new file is loaded.
+  // falls back to the step-2 default.
   const [rowDims, setRowDims] = useState({})
   // Original PO-row indices the user has removed from the export.
   const [removed, setRemoved] = useState(() => new Set())
@@ -161,30 +163,43 @@ export default function UpsBatchTab({ addToast }) {
     })
   }, [persist])
 
-  const handleFile = useCallback((e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  // Read one .xlsx into its "Po Details" rows.
+  const readFileRows = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: 'array' })
-        // The PO export's data lives on the "Po Details" sheet (select by name).
         const ws = wb.Sheets['Po Details'] || wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
-        if (!rows.length) {
-          addToast('That file has no data rows', 'warning')
-          return
-        }
-        setPoRows(rows)
-        setRowDims({})
-        setRemoved(new Set())
-        setFileName(file.name)
-        addToast(`Loaded ${rows.length} row(s) from ${file.name}`, 'success')
-      } catch (err) {
-        addToast(`Could not read file: ${err.message}`, 'warning')
-      }
+        resolve(XLSX.utils.sheet_to_json(ws, { defval: '', raw: false }))
+      } catch (err) { reject(err) }
     }
+    reader.onerror = () => reject(new Error('could not read file'))
     reader.readAsArrayBuffer(file)
+  })
+
+  // Attach one or more files; their rows are appended to what's already loaded
+  // (attach again later to keep adding). Existing per-row edits/removals are
+  // preserved because appended rows only take new indices.
+  const handleFile = useCallback(async (e) => {
+    const selected = Array.from(e.target.files || [])
+    if (!selected.length) return
+    try {
+      const results = await Promise.all(
+        selected.map(async f => ({ name: f.name, rows: await readFileRows(f) }))
+      )
+      const newRows = results.flatMap(r => r.rows)
+      if (!newRows.length) {
+        addToast('No data rows found in those file(s)', 'warning')
+        return
+      }
+      setPoRows(prev => [...prev, ...newRows])
+      setFiles(prev => [...prev, ...results.map(r => ({ name: r.name, count: r.rows.length }))])
+      addToast(`Added ${newRows.length} row(s) from ${selected.length} file(s)`, 'success')
+    } catch (err) {
+      addToast(`Could not read file: ${err.message}`, 'warning')
+    } finally {
+      if (fileRef.current) fileRef.current.value = ''   // allow re-selecting the same file
+    }
   }, [addToast])
 
   const keyMap = useMemo(() => {
@@ -333,6 +348,50 @@ export default function UpsBatchTab({ addToast }) {
     addToast(`Downloaded review copy — ${data.length} row(s), with headers`, 'success')
   }, [exportRows, buildRow, addToast])
 
+  // Copy text to the clipboard, with a textarea fallback for non-secure
+  // contexts (e.g. the packaged app loading over file://).
+  const copyText = async (text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch { /* fall through */ }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      return ok
+    } catch { return false }
+  }
+
+  // Item list for the vendor dropship email: one line per order,
+  // "<last 4 of tracking #> - <SKU> (<qty> UNIT[S])".
+  const copyItemList = useCallback(async () => {
+    if (!exportRows.length) {
+      addToast('Upload a PO file first', 'warning')
+      return
+    }
+    const lines = exportRows.map(({ r }) => {
+      // Prefix with the last 4 of the tracking # when the PO carries one;
+      // otherwise (UPS assigns tracking at label time) just list the item.
+      const last4 = clean(pick(r, ['Tracking Number'])).slice(-4)
+      const ref2 = buildRef2(pick(r, ['SKU']), pick(r, ['Qty']))
+      return last4 ? `${last4} - ${ref2}` : ref2
+    })
+    const ok = await copyText(lines.join('\n'))
+    addToast(
+      ok ? `Copied ${lines.length} item(s) — paste into your vendor email` : 'Could not copy to clipboard',
+      ok ? 'success' : 'warning'
+    )
+  }, [exportRows, pick, buildRef2, addToast])
+
   // Open the UPS batch upload page in the system browser (Electron), falling
   // back to a normal new tab when running in a plain browser (dev mode).
   const openUpsUpload = useCallback(() => {
@@ -347,11 +406,22 @@ export default function UpsBatchTab({ addToast }) {
 
   const clearFile = useCallback(() => {
     setPoRows([])
+    setFiles([])
     setRowDims({})
     setRemoved(new Set())
-    setFileName('')
     if (fileRef.current) fileRef.current.value = ''
   }, [])
+
+  // Products loaded, grouped by SKU with total quantity (kept rows only).
+  const skuSummary = useMemo(() => {
+    const m = new Map()
+    exportRows.forEach(({ r }) => {
+      const sku = clean(pick(r, ['SKU'])) || '(no SKU)'
+      const qtyN = parseInt(clean(pick(r, ['Qty'])), 10)
+      m.set(sku, (m.get(sku) || 0) + (Number.isFinite(qtyN) ? qtyN : 1))
+    })
+    return Array.from(m, ([sku, qty]) => ({ sku, qty })).sort((a, b) => a.sku.localeCompare(b.sku))
+  }, [exportRows, pick])
 
   const count = exportRows.length
 
@@ -367,15 +437,15 @@ export default function UpsBatchTab({ addToast }) {
         </div>
       </div>
 
-      {/* Step 1 — upload */}
+      {/* Step 1 — upload (one or more files, combined) */}
       <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            1 · Upload PO file (.xlsx)
+            1 · Upload PO file(s) (.xlsx)
           </label>
-          {fileName && (
+          {files.length > 0 && (
             <button onClick={clearFile} className="text-xs text-gray-400 hover:text-gray-600">
-              Clear
+              Clear all
             </button>
           )}
         </div>
@@ -383,15 +453,55 @@ export default function UpsBatchTab({ addToast }) {
           ref={fileRef}
           type="file"
           accept=".xlsx,.xls"
+          multiple
           onChange={handleFile}
           className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
         />
-        {fileName && (
-          <p className="text-sm text-gray-500 mt-2">
-            Loaded <span className="font-semibold text-gray-700">{fileName}</span> — {poRows.length} row(s)
-          </p>
+        <p className="text-xs text-gray-400 mt-2">
+          Select one or more files — attach again anytime to add more (rows are combined).
+        </p>
+        {files.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {files.map((f, i) => (
+              <div key={i} className="flex justify-between text-sm">
+                <span className="font-medium text-gray-700 truncate mr-3">{f.name}</span>
+                <span className="text-gray-400 whitespace-nowrap">{f.count} row(s)</span>
+              </div>
+            ))}
+            <div className="flex justify-between text-sm pt-1 mt-1 border-t border-gray-100">
+              <span className="text-gray-500">Total loaded ({files.length} file{files.length !== 1 ? 's' : ''})</span>
+              <span className="font-bold text-gray-700">{poRows.length} row(s)</span>
+            </div>
+          </div>
         )}
       </div>
+
+      {/* Products loaded — SKU × qty summary */}
+      {count > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4 shadow-sm">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Products loaded ({skuSummary.length} SKU{skuSummary.length !== 1 ? 's' : ''})
+          </label>
+          <div className="overflow-auto max-h-64 border border-gray-100 rounded">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr className="text-gray-500 text-xs uppercase">
+                  <th className="text-left px-3 py-2 font-semibold">SKU</th>
+                  <th className="text-right px-3 py-2 font-semibold w-24">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {skuSummary.map((s, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{s.sku}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-gray-800">{s.qty}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Step 2 — package weight & dimensions */}
       <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4 shadow-sm">
@@ -594,13 +704,23 @@ export default function UpsBatchTab({ addToast }) {
 
       {/* Download + upload-to-UPS link */}
       <div className="mt-6 flex justify-between items-center gap-3 border-t border-gray-200 pt-4">
-        <button
-          onClick={openUpsUpload}
-          title="Open the UPS batch upload page in your browser"
-          className="px-4 py-2 bg-white border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition text-sm font-semibold"
-        >
-          To upload to UPS, click here ↗
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={openUpsUpload}
+            title="Open the UPS batch upload page in your browser"
+            className="px-4 py-2 bg-white border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition text-sm font-semibold"
+          >
+            To upload to UPS, click here ↗
+          </button>
+          <button
+            onClick={copyItemList}
+            disabled={count === 0}
+            title={count === 0 ? 'Upload a PO file first' : 'Copy the item list for the vendor dropship email'}
+            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Copy item list
+          </button>
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleDownloadReview}
