@@ -160,7 +160,7 @@ export default function DropshipTab({ addToast }) {
         seen.add(sig)
         let pages = 0
         try { pages = (await PDFDocument.load(bytes)).getPageCount() } catch { /* keep 0 */ }
-        loaded.push({ id: did++, name: f.name, bytes, pages, last4: '', sku: '', sig })
+        loaded.push({ id: did++, name: f.name, bytes, pages, last4: '', sku: '', qty: '1', sig })
       }
       if (loaded.length) setItems(prev => [...prev, ...loaded])
       if (dups.length) {
@@ -242,12 +242,15 @@ export default function DropshipTab({ addToast }) {
     }
   }, [items, addToast])
 
-  // Repeated SKUs added up — how many of each product will be invoiced.
+  // Repeated SKUs added up — how many of each product will be invoiced,
+  // using each label's own Qty field.
   const skuTotals = useMemo(() => {
     const map = new Map()   // key: base.toUpperCase()  ->  { display, qty, count }
     items.forEach(it => {
-      const { base, qty } = parseSku(it.sku)
+      const base = parseSku(it.sku).base
       if (!base) return
+      const q = parseInt(String(it.qty), 10)
+      const qty = Number.isFinite(q) && q > 0 ? q : 1
       const key = base.toUpperCase()
       const cur = map.get(key)
       if (cur) { cur.qty += qty; cur.count += 1 }
@@ -280,11 +283,13 @@ export default function DropshipTab({ addToast }) {
       addToast('Upload at least one label first', 'warning')
       return
     }
-    // Plain-text version (fallback / plain editors).
+    // Plain-text version (fallback / plain editors): label · SKU · qty.
     const lines = items.map(it => {
       const last4 = (it.last4 || '').trim()
       const sku = (it.sku || '').trim()
-      return last4 ? `${last4} - ${sku}` : sku
+      const qty = (String(it.qty || '').trim()) || '1'
+      const head = last4 ? `${last4} - ${sku}` : sku
+      return `${head} - ${qty}`
     })
     let text = lines.join('\n')
     if (skuTotals.length) {
@@ -361,7 +366,7 @@ export default function DropshipTab({ addToast }) {
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-4">
           <div className="px-4 py-2 border-b border-gray-100">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              2 · Label · Last 4 of tracking · SKU
+              2 · Label · Last 4 · SKU · Qty
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -372,6 +377,7 @@ export default function DropshipTab({ addToast }) {
                   <th className="px-3 py-2 text-left">Label file</th>
                   <th className="px-3 py-2 text-left w-28">Last 4</th>
                   <th className="px-3 py-2 text-left">SKU</th>
+                  <th className="px-3 py-2 text-left w-20">Qty</th>
                   <th className="px-3 py-2 text-center w-24">Order</th>
                   <th className="px-3 py-2 text-center w-12">Del</th>
                 </tr>
@@ -400,8 +406,18 @@ export default function DropshipTab({ addToast }) {
                         type="text"
                         value={it.sku}
                         onChange={e => setField(it.id, 'sku', e.target.value)}
-                        placeholder="e.g. S26-ULTRA-512GB-BLACK (1 UNIT)"
+                        placeholder="e.g. S26-ULTRA-512GB-BLACK"
                         className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={it.qty}
+                        onChange={e => setField(it.id, 'qty', e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="1"
+                        className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </td>
                     <td className="px-3 py-1.5 text-center whitespace-nowrap">
