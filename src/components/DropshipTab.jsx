@@ -222,23 +222,34 @@ export default function DropshipTab({ addToast }) {
         const pages = await merged.copyPages(src, src.getPageIndices())
         pages.forEach(p => {
           const { width, height } = p.getSize()
-          // Only touch standard Letter-height labels (skip odd sizes rather than
-          // risk covering / stamping the wrong spot).
-          const isLetter = height > 750 && height < 820
-          if (hideSku && isLetter) {
+          // Two known layouts (skip odd sizes rather than risk marking the wrong spot):
+          // - Walmart export: portrait Letter, label upright, has a Reference-SKU
+          //   line (redacted) and a bottom FreeText note (replaced by our stamp).
+          // - UPS.com direct print: landscape Letter, label rotated sideways in the
+          //   top-left, no Reference SKU anywhere (nothing to redact) — the SKU is
+          //   stamped in the blank space below the label.
+          const isWalmartPortrait = width < height && height > 750 && height < 820
+          const isUpsLandscape = width > height && width > 750 && width < 820 && height > 580 && height < 640
+          if (hideSku && isWalmartPortrait) {
             SKU_BANDS.forEach(b => {
               p.drawRectangle({ x: 0, y: height - b.bottom, width: width * REDACT_WIDTH_FRAC, height: b.bottom - b.top, color: rgb(0, 0, 0) })
             })
           }
-          if (stampSku && isLetter) {
+          if (stampSku) {
             const skuTxt = (it.sku || '').trim()
             const q = (String(it.qty || '').trim()) || '1'
             if (skuTxt) {
-              // Remove the label's existing bottom SKU note (a FreeText
-              // annotation) and stamp the typed SKU + qty in its place.
               const unit = parseInt(q, 10) === 1 ? 'unit' : 'units'
-              p.node.delete(PDFName.of('Annots'))
-              p.drawText(`${skuTxt}  -  ${q} ${unit}`, { x: 27, y: height - 605, size: 16, font, color: rgb(0, 0, 0) })
+              const text = `${skuTxt}  -  ${q} ${unit}`
+              if (isWalmartPortrait) {
+                // Remove the label's existing bottom SKU note (a FreeText
+                // annotation) and stamp the typed SKU + qty in its place.
+                p.node.delete(PDFName.of('Annots'))
+                p.drawText(text, { x: 27, y: height - 605, size: 16, font, color: rgb(0, 0, 0) })
+              } else if (isUpsLandscape) {
+                // Blank area under the sideways label (label ends ~305pt down).
+                p.drawText(text, { x: 40, y: height - 345, size: 16, font, color: rgb(0, 0, 0) })
+              }
             }
           }
           merged.addPage(p)
